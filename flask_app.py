@@ -40,7 +40,7 @@ if not all([BOT_USERNAME, BOT_PASSWORD, DISCOURSE_URL]):
 
 
 options = webdriver.ChromeOptions()
-#options.add_argument("--headless=new")  # use the new headless mode
+options.add_argument("--headless=new")  # use the new headless mode
 options.add_argument("--disable-gpu")
 options.add_argument("--disable-software-rasterizer")
 options.add_argument("--use-gl=swiftshader")  # force software OpenGL
@@ -76,8 +76,8 @@ DB_PATH = 'discoursesecure.db'
 REMOTE_DB_NAME = 'discoursesecure.db'
 
 # Thread synchronization
-db_dirty_event = threading.Event()
-db_lock = threading.Lock()
+db_dirty_event2 = threading.Event()
+db_lock2 = threading.Lock()
 
 # Initialize DB and download if missing
 def init_db():
@@ -88,7 +88,7 @@ def init_db():
         except Exception as e:
             app.logger.warning(f"Failed to download DB: {e}")
 
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
+    with db_lock2, sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS keys (
                 username TEXT PRIMARY KEY,
@@ -106,18 +106,18 @@ def generate_secret(length=10):
     return ''.join(random.choices(string.digits, k=length))
 
 def mark_db_dirty():
-    db_dirty_event.set()
+    db_dirty_event2.set()
 
 def db_upload_watcher():
     while True:
-        db_dirty_event.wait()
+        db_dirty_event2.wait()
         app.logger.info("DB marked dirty. Starting upload process...")
 
-        while db_dirty_event.is_set():
-            db_dirty_event.clear()
+        while db_dirty_event2.is_set():
+            db_dirty_event2.clear()
             app.logger.info("Uploading DB to Google Drive...")
 
-            with db_lock:
+            with db_lock2:
                 try:
                     upload_blob(local_path=DB_PATH, remote_name=REMOTE_DB_NAME)
                     app.logger.info("Database upload complete.")
@@ -171,12 +171,6 @@ def send_pm_via_selenium(recipient_username, secret_code):
         body_textarea.send_keys(f"Hello @{recipient_username}, your verification code is: **{secret_code}**")
         time.sleep(1)
 
-        # Fill in the message body (Discourse uses .d-editor-input)
-        body_textarea = browser.find_element(By.CLASS_NAME, "d-editor-input")
-        body_textarea.send_keys(
-            f"Hello @{recipient_username}, your verification code is: **{secret_code}**")
-        time.sleep(1)
-
         # Send the message
         send_button = browser.find_element(By.XPATH,
             "/html/body/section/div[1]/div[9]/div[3]/div[3]/div/button[1]")
@@ -193,7 +187,7 @@ def send_pm_via_selenium(recipient_username, secret_code):
 
 @app.route('/discoursesecure/getRSA', methods=['POST'])
 def get_rsa():
-    with db_lock:
+    with db_lock2:
         conn = get_db_connection()
         rows = conn.execute('SELECT username, rsa FROM keys WHERE rsa IS NOT NULL').fetchall()
         conn.close()
@@ -211,7 +205,7 @@ def get_secret():
 
     secret = generate_secret()
 
-    with db_lock:
+    with db_lock2:
         conn = get_db_connection()
         # Insert or update secret for username (clear RSA so they re-add key)
         conn.execute('REPLACE INTO keys (username, secret, rsa) VALUES (?, ?, NULL)', (username, secret))
@@ -226,7 +220,7 @@ def get_secret():
     except Exception as e:
         app.logger.warning(f"Failed to send PM: {e}")
 
-    return jsonify({'message': f'Secret generated and PM sent for {username}', 'secret': secret})
+    return jsonify({'message': f'Secret generated and PM sent for {username}'})
 
 @app.route('/discoursesecure/addRSA', methods=['POST'])
 def add_rsa():
@@ -238,7 +232,7 @@ def add_rsa():
     if not all([username, secret, rsa_key]):
         return jsonify({'error': 'username, secret, and RSA key are required'}), 400
 
-    with db_lock:
+    with db_lock2:
         conn = get_db_connection()
         row = conn.execute('SELECT secret FROM keys WHERE username = ?', (username,)).fetchone()
 

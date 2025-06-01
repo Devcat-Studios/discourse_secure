@@ -1,4 +1,6 @@
-ENDPOINT 1: GET RSA PUBLIC KEYS at https://cubicbrick.onrender.com/discoursesecure/getRSA with POST.
-ENDPOINT 2: GET SECRET at https://cubicbrick.onrender.com/discoursesecure/getSecret with POST. Body should contain {'username' : username}
+
+
+ENDPOINT 1: GET RSA PUBLIC KEYS at https://discoursesecure.onrender.com/discoursesecure/getRSA with POST.
+ENDPOINT 2: GET SECRET at https://discoursesecure.onrender.com/discoursesecure/getSecret with POST. Body should contain {'username' : username}
 You will be sent a verification message by email. It will contain a 10-digit number. Then, make a POST request to:
-ENDPOINT 3: ADD RSA PUBLIC KEY at https://cubicbrick.onrender.com/discoursesecure/addRSA with POST. Body should contain {'username': username, 'secret': secret, 'RSA': rsakey}
+ENDPOINT 3: ADD RSA PUBLIC KEY at https://discoursesecure.onrender.com/discoursesecure/addRSA with POST. Body should contain {'username': username, 'secret': secret, 'RSA': rsakey}
