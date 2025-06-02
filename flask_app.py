@@ -9,21 +9,13 @@ monkey.patch_all()
 import sqlite3
 import requests
 from flask import Flask, request, jsonify
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as ec
 from dotenv import load_dotenv
 from gmail_api import download_blob, upload_blob
 from werkzeug.middleware.proxy_fix import ProxyFix
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
+from datetime import datetime
 import signal
-
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 # --- Load .env if exists ---
 if os.path.exists(".env"):
     load_dotenv()
@@ -39,45 +31,22 @@ if not all([BOT_USERNAME, BOT_PASSWORD, DISCOURSE_URL]):
 
 
 
-options = webdriver.ChromeOptions()
-options.add_argument("--headless=new")  # use the new headless mode
-options.add_argument("--disable-gpu")
-options.add_argument("--disable-software-rasterizer")
-options.add_argument("--use-gl=swiftshader")  # force software OpenGL
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--window-size=1920,1080")
-
-#service = Service(chromedriver_path)
-browser = webdriver.Chrome(options=options)
-browser.get('https://x-camp.discourse.group/')
-
-# Login
-WebDriverWait(browser,
-              15).until(ec.presence_of_element_located(
-                  (By.ID, "username"))).send_keys(BOT_EMAIL)
-WebDriverWait(browser,
-              15).until(ec.presence_of_element_located(
-                  (By.ID, "password"))).send_keys(BOT_PASSWORD)
-signin = WebDriverWait(browser, 15).until(
-    ec.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
-signin.click()
-WebDriverWait(browser, 20).until(
-    ec.presence_of_element_located((By.CSS_SELECTOR, ".current-user")))
-reqs = requests.Session()
-for cookie in browser.get_cookies():
-    reqs.cookies.set(cookie['name'], cookie['value'])
-
 app = Flask(__name__)
 app.secret_key = os.urandom(64)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-DB_PATH = 'discoursesecure.db'
+DB_PATH = 'instance/discoursesecure.db'
 REMOTE_DB_NAME = 'discoursesecure.db'
 
 # Thread synchronization
 db_dirty_event2 = threading.Event()
 db_lock2 = threading.Lock()
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+)
 
 # Initialize DB and download if missing
 def init_db():
@@ -124,68 +93,48 @@ def db_upload_watcher():
                 except Exception as e:
                     app.logger.warning(f"Upload failed: {e}")
 
-# --- Selenium login and PM sending with cookies ---
 
+reqs = requests.Session()
+
+def csrf():
+    csrf = reqs.get("https://x-camp.discourse.group/session/csrf.json").json().get("csrf")
+    print(csrf)
+    return csrf
+
+def send_pm(content:str, topic_title:str,recipents:list):
+    recipents=",".join(recipents)
+    print(recipents)
+    headers = {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-Token': csrf(),  # Only if required
+        'User-Agent': os.getenv(BOT_EMAIL),
+        'Referer': 'https://x-camp.discourse.group/',
+        'Origin': 'https://x-camp.discourse.group/',
+    }
+
+    cookies = {
+        '_forum_session': os.getenv("_fs"),
+        '_t':os.getenv("_t"),
+    }
+    data = {
+        'title': topic_title,
+        'raw': content,
+        'target_recipients':recipents,
+        'unlist_topic':'false',
+        'archetype':'private_message',
+    }
+    post_p =reqs.post("https://x-camp.discourse.group/posts.json", headers=headers, cookies=cookies, data=data)
+    print(post_p.json())
 
 def load_cookies(cookie_path):
     with open(cookie_path, "r") as f:
         return json.load(f)
 
-def send_pm_via_selenium(recipient_username, secret_code):
-    print("sending")
-    global browser
-    try:
-        # Go to messages page
-        browser.get(f"{DISCOURSE_URL}/u/cubicbrick/messages")
-        time.sleep(3)
-        print("at page")
-
-        # Click to compose new message
-        new_msg_btn = browser.find_element(By.XPATH,
-            "/html/body/section/div[1]/div[3]/div[2]/div[2]/section/section/div/div/section/ul/li[1]/button")
-        new_msg_btn.click()
-        time.sleep(2)
-
-        # Find the <details> element for recipients
-        details_elem = WebDriverWait(browser, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "details.select-kit.multi-select.user-chooser"))
-        )
-        summary_elem = details_elem.find_element(By.CSS_SELECTOR, "summary")
-        summary_elem.click()
-
-        # Fill in recipient
-        user_input = browser.find_element(By.CSS_SELECTOR, 'details#private-message-users input[type="search"]')
-        user_input.clear()
-        user_input.send_keys(recipient_username)
-        time.sleep(2)  # allow dropdown to populate
-        user_input.send_keys(Keys.ENTER)
-        time.sleep(1)
-
-        # Fill in title
-        title_input = browser.find_element(By.ID, "reply-title")
-        title_input.send_keys("Your Verification Code")
-        time.sleep(1)
-
-        # Fill in body (message content)
-        body_textarea = browser.find_element(By.CSS_SELECTOR, 'textarea.d-editor-input')
-        body_textarea.send_keys(f"Hello @{recipient_username}, your verification code is: **{secret_code}**")
-        time.sleep(1)
-
-        # Send the message
-        send_button = browser.find_element(By.XPATH,
-            "/html/body/section/div[1]/div[9]/div[3]/div[3]/div/button[1]")
-        send_button.click()
-        time.sleep(3)
-        print("send message")
-
-        app.logger.info(f"PM sent to {recipient_username} with secret {secret_code}.")
-
-    except Exception as e:
-        app.logger.error(f"Selenium error while sending PM: {e}")
-
 # --- Flask endpoints ---
 
 @app.route('/discoursesecure/getRSA', methods=['POST'])
+@limiter.limit("1 per 10 seconds")
 def get_rsa():
     with db_lock2:
         conn = get_db_connection()
@@ -195,6 +144,7 @@ def get_rsa():
     return jsonify(result)
 
 @app.route('/discoursesecure/getSecret', methods=['POST'])
+@limiter.limit("1 per 20 minutes")
 def get_secret():
     print("secret request")
     data = request.get_json()
@@ -207,23 +157,23 @@ def get_secret():
 
     with db_lock2:
         conn = get_db_connection()
-        # Insert or update secret for username (clear RSA so they re-add key)
-        conn.execute('REPLACE INTO keys (username, secret, rsa) VALUES (?, ?, NULL)', (username, secret))
+        conn.execute('REPLACE INTO keys (username, secret) VALUES (?, ?)', (username, secret))
         conn.commit()
         conn.close()
 
     mark_db_dirty()
 
-    # Send PM with the secret code via Selenium bot
     try:
-        send_pm_via_selenium(username, secret)
+        send_pm(f"Your verification code is {secret}.", "Verify your identity", [username])
     except Exception as e:
         app.logger.warning(f"Failed to send PM: {e}")
 
     return jsonify({'message': f'Secret generated and PM sent for {username}'})
 
 @app.route('/discoursesecure/addRSA', methods=['POST'])
+@limiter.limit("1 per 20 minutes")
 def add_rsa():
+
     data = request.get_json()
     username = data.get('username')
     secret = data.get('secret')
