@@ -1,1 +1,2 @@
-# discourse_secure
+# Discourse Secure
+A authentication method for Discourse built by @cubicBrick.
