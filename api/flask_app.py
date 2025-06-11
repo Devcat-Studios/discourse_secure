@@ -10,7 +10,7 @@ import sqlite3
 import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from api.gmail_api import download_blob, upload_blob
+from gmail_api import download_blob, upload_blob
 from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime
 from flask_limiter import Limiter
@@ -32,7 +32,8 @@ app = Flask(__name__)
 app.secret_key = os.urandom(64)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-DB_PATH = 'instance/discoursesecure.db'
+DB_PATH = '/tmp/discoursesecure.db'  # was 'instance/discoursesecure.db'
+
 REMOTE_DB_NAME = 'discoursesecure.db'
 
 # Thread synchronization
@@ -43,7 +44,10 @@ limiter = Limiter(app=app, key_func=get_remote_address, default_limits=[])
 
 # Initialize DB and download if missing
 def init_db():
-    os.makedirs('instance', exist_ok=True)
+    try:
+        os.makedirs('instance', exist_ok=True)
+    except Exception as e:
+        app.logger.warning(f"Error: {e}")
 
     if not os.path.exists(DB_PATH):
         app.logger.info("Downloading DB from Drive...")
