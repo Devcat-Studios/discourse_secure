@@ -3,7 +3,7 @@ Flask-SQLAlchemy
 Flask-Login
 Flask-SocketIO
 Flask-WTF
-Flask-Limiter
+flask_limiter
 colorama
 ansi2html
 MarkupSafe
