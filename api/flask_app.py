@@ -10,7 +10,7 @@ import sqlite3
 import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from gmail_api import download_blob, upload_blob
+from api.gmail_api import download_blob, upload_blob
 from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime
 from flask_limiter import Limiter
